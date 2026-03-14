@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:stewart_platform"
+        x:Class="stewart_platform.MainWindow"
+        Title="Stewart Platform V2" Height="650" Width="1100" Background="#F0F0F0">
+
+	<Grid ColumnDefinitions="380, *">
+
+		<ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+			<StackPanel Margin="10" Spacing="15">
+
+				<Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+					<StackPanel Spacing="10">
+						<TextBlock Text="Hardware Connection" FontWeight="Bold"/>
+						<StackPanel Orientation="Horizontal" Spacing="10">
+							<Button x:Name="BtnConnect" Content="Connect Platform" Width="130" Click="BtnConnect_Click"/>
+							<Button x:Name="BtnReset" Content="Reset Pose" Width="100" Click="BtnReset_Click" Background="#FFDDDD"/>
+						</StackPanel>
+						<TextBlock x:Name="TxtStatus" Text="Disconnected" FontWeight="Bold" Foreground="Red"/>
+					</StackPanel>
+				</Border>
+
+				<Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+					<StackPanel Spacing="5">
+						<TextBlock Text="Position (mm)" FontWeight="Bold"/>
+						<TextBlock Text="X Axis"/>
+						<Slider x:Name="SliderX" Minimum="-50" Maximum="50" Value="0" ValueChanged="OnSliderValueChanged"/>
+						<TextBlock Text="Y Axis"/>
+						<Slider x:Name="SliderY" Minimum="-50" Maximum="50" Value="0" ValueChanged="OnSliderValueChanged"/>
+						<TextBlock Text="Z Axis"/>
+						<Slider x:Name="SliderZ" Minimum="-50" Maximum="50" Value="0" ValueChanged="OnSliderValueChanged"/>
+					</StackPanel>
+				</Border>
+
+				<Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+					<StackPanel Spacing="5">
+						<TextBlock Text="Rotation (Degrees)" FontWeight="Bold"/>
+						<TextBlock Text="Roll (Rx)"/>
+						<Slider x:Name="SliderRx" Minimum="-30" Maximum="30" Value="0" ValueChanged="OnSliderValueChanged"/>
+						<TextBlock Text="Pitch (Ry)"/>
+						<Slider x:Name="SliderRy" Minimum="-30" Maximum="30" Value="0" ValueChanged="OnSliderValueChanged"/>
+						<TextBlock Text="Yaw (Rz)"/>
+						<Slider x:Name="SliderRz" Minimum="-30" Maximum="30" Value="0" ValueChanged="OnSliderValueChanged"/>
+					</StackPanel>
+				</Border>
+
+				<Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+					<StackPanel Spacing="2">
+						<TextBlock Text="Calculated Servo Angles" FontWeight="Bold"/>
+						<TextBlock x:Name="TxtServo0" Text="Servo 0: 0.00°"/>
+						<TextBlock x:Name="TxtServo1" Text="Servo 1: 0.00°"/>
+						<TextBlock x:Name="TxtServo2" Text="Servo 2: 0.00°"/>
+						<TextBlock x:Name="TxtServo3" Text="Servo 3: 0.00°"/>
+						<TextBlock x:Name="TxtServo4" Text="Servo 4: 0.00°"/>
+						<TextBlock x:Name="TxtServo5" Text="Servo 5: 0.00°"/>
+					</StackPanel>
+				</Border>
+
+			</StackPanel>
+		</ScrollViewer>
+
+		<Border Grid.Column="1" Background="Black" Margin="10">
+			<local:PlatformView3D x:Name="Visualizer" />
+		</Border>
+
+	</Grid>
+</Window>
