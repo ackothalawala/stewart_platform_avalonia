@@ -157,6 +157,7 @@ namespace stewart_platform
             }
 
             if (_vao != 0) _gl.BindVertexArray(0);
+            RequestNextFrameRendering();
         }
 
         private unsafe void DrawLineLoop(Vector3[] points, Vector4 color)
