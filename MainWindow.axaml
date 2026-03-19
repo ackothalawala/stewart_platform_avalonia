@@ -2,127 +2,324 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:stewart_platform"
         x:Class="stewart_platform.MainWindow"
-        Title="Stewart Platform V2 (Avalonia)" Height="700" Width="1150" Background="#F0F0F0">
+        Title="Stewart Platform V2"
+        Width="1100" Height="650"
+        Background="#1E1E1E">
+
+	<Window.Styles>
+
+		<!-- Reusable "section box" replaces WPF GroupBox -->
+		<Style Selector="Border.section">
+			<Setter Property="BorderBrush"     Value="#444"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Margin"          Value="0,0,0,10"/>
+		</Style>
+		<Style Selector="TextBlock.sectionHeader">
+			<Setter Property="Background"  Value="#2E2E2E"/>
+			<Setter Property="Foreground"  Value="#AAAAAA"/>
+			<Setter Property="FontWeight"  Value="SemiBold"/>
+			<Setter Property="FontSize"    Value="12"/>
+			<Setter Property="Padding"     Value="8,4"/>
+		</Style>
+		<Style Selector="Border.sectionBody">
+			<Setter Property="Padding" Value="8"/>
+		</Style>
+
+		<!-- General controls -->
+		<Style Selector="TextBlock">
+			<Setter Property="Foreground"        Value="#DDDDDD"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="TextBox">
+			<Setter Property="Background"  Value="#2D2D2D"/>
+			<Setter Property="Foreground"  Value="#EEEEEE"/>
+			<Setter Property="BorderBrush" Value="#555"/>
+			<Setter Property="Padding"     Value="4,2"/>
+		</Style>
+		<Style Selector="Button">
+			<Setter Property="Background"   Value="#3A3A3A"/>
+			<Setter Property="Foreground"   Value="#EEEEEE"/>
+			<Setter Property="BorderBrush"  Value="#555"/>
+			<Setter Property="Padding"      Value="8,4"/>
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#4A4A4A"/>
+		</Style>
+		<Style Selector="Slider">
+			<Setter Property="Margin" Value="0,2,0,6"/>
+		</Style>
+		<Style Selector="RadioButton">
+			<Setter Property="Foreground" Value="#DDDDDD"/>
+		</Style>
+	</Window.Styles>
 
 	<Grid>
-		<Grid ColumnDefinitions="400, *">
+		<Grid.ColumnDefinitions>
+			<ColumnDefinition Width="380"/>
+			<ColumnDefinition Width="*"/>
+		</Grid.ColumnDefinitions>
 
-			<ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="10">
-				<StackPanel Spacing="15">
+		<!-- ===== LEFT PANEL ===== -->
+		<ScrollViewer Grid.Column="0"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="#252525">
+			<StackPanel Margin="10">
 
-					<Grid>
-						<Border BorderBrush="#C0C0C0" BorderThickness="1" CornerRadius="3" Margin="0,8,0,0" Padding="15,20,15,15" Background="White">
+				<!-- Hardware Connection -->
+				<Border Classes="section">
+					<StackPanel>
+						<TextBlock Classes="sectionHeader"
+                                   Text="Hardware Connection"/>
+						<Border Classes="sectionBody">
 							<StackPanel>
 								<StackPanel Orientation="Horizontal" Spacing="10">
-									<Button x:Name="BtnConnect" Content="Connect Platform" Width="135" Click="BtnConnect_Click" Background="#2196F3" Foreground="White" FontWeight="SemiBold" HorizontalContentAlignment="Center"/>
-									<Button x:Name="BtnReset" Content="Reset Pose" Width="100" Click="BtnReset_Click" Background="#FFDDDD" Foreground="Black" FontWeight="SemiBold" HorizontalContentAlignment="Center"/>
+									<Button x:Name="BtnConnect"
+                                            Content="Connect Platform"
+                                            Width="140"
+                                            Click="BtnConnect_Click"/>
+									<Button x:Name="BtnReset"
+                                            Content="Reset Pose"
+                                            Width="100"
+                                            Background="#5A2A2A"
+                                            Click="BtnReset_Click"/>
 								</StackPanel>
-								<TextBlock x:Name="TxtStatus" Text="Disconnected" FontWeight="Bold" Foreground="Red" Margin="0,10,0,0"/>
+								<TextBlock x:Name="TxtStatus"
+                                           Text="Disconnected"
+                                           FontWeight="Bold"
+                                           Margin="0,10,0,0"
+                                           Foreground="#FF5555"/>
 							</StackPanel>
 						</Border>
-						<TextBlock Text="Hardware Connection" Background="#F0F0F0" Padding="5,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,0,0,0" Foreground="Black"/>
-					</Grid>
-
-					<Grid>
-						<Border BorderBrush="#C0C0C0" BorderThickness="1" CornerRadius="3" Margin="0,8,0,0" Padding="15,20,15,15" Background="White">
-							<StackPanel Spacing="10">
-								<Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="60,*,60">
-									<TextBlock Text="X Axis" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Foreground="Black"/>
-									<Slider x:Name="SldPosX" Minimum="-50" Maximum="50" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="0" Grid.Column="1" Margin="10,0"/>
-									<TextBox x:Name="InpPosX" Text="0.0" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right"/>
-
-									<TextBlock Text="Y Axis" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="Black" Margin="0,10,0,0"/>
-									<Slider x:Name="SldPosY" Minimum="-50" Maximum="50" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="1" Grid.Column="1" Margin="10,10,10,0"/>
-									<TextBox x:Name="InpPosY" Text="0.0" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Margin="0,10,0,0"/>
-
-									<TextBlock Text="Z Axis" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Foreground="Black" Margin="0,10,0,0"/>
-									<Slider x:Name="SldPosZ" Minimum="-50" Maximum="50" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="2" Grid.Column="1" Margin="10,10,10,0"/>
-									<TextBox x:Name="InpPosZ" Text="0.0" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Margin="0,10,0,0"/>
-								</Grid>
-								<Button Content="Set Position" Click="BtnSetPos_Click" Width="120" HorizontalAlignment="Right" Margin="0,5,0,0" HorizontalContentAlignment="Center"/>
-							</StackPanel>
-						</Border>
-						<TextBlock Text="Position (mm)" Background="#F0F0F0" Padding="5,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,0,0,0" Foreground="Black"/>
-					</Grid>
-
-					<Grid>
-						<Border BorderBrush="#C0C0C0" BorderThickness="1" CornerRadius="3" Margin="0,8,0,0" Padding="15,20,15,15" Background="White">
-							<StackPanel Spacing="10">
-								<Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="60,*,60">
-									<TextBlock Text="Roll (Rx)" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Foreground="Black"/>
-									<Slider x:Name="SldRotX" Minimum="-30" Maximum="30" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="0" Grid.Column="1" Margin="10,0"/>
-									<TextBox x:Name="InpRotX" Text="0.0" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right"/>
-
-									<TextBlock Text="Pitch (Ry)" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Foreground="Black" Margin="0,10,0,0"/>
-									<Slider x:Name="SldRotY" Minimum="-30" Maximum="30" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="1" Grid.Column="1" Margin="10,10,10,0"/>
-									<TextBox x:Name="InpRotY" Text="0.0" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Margin="0,10,0,0"/>
-
-									<TextBlock Text="Yaw (Rz)" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Foreground="Black" Margin="0,10,0,0"/>
-									<Slider x:Name="SldRotZ" Minimum="-30" Maximum="30" Value="0" ValueChanged="Slider_ValueChanged" Grid.Row="2" Grid.Column="1" Margin="10,10,10,0"/>
-									<TextBox x:Name="InpRotZ" Text="0.0" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Margin="0,10,0,0"/>
-								</Grid>
-								<Button Content="Set Rotation" Click="BtnSetRot_Click" Width="120" HorizontalAlignment="Right" Margin="0,5,0,0" HorizontalContentAlignment="Center"/>
-							</StackPanel>
-						</Border>
-						<TextBlock Text="Rotation (Degrees)" Background="#F0F0F0" Padding="5,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,0,0,0" Foreground="Black"/>
-					</Grid>
-
-					<Grid>
-						<Border BorderBrush="#C0C0C0" BorderThickness="1" CornerRadius="3" Margin="0,8,0,0" Padding="15,20,15,15" Background="White">
-							<Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,*">
-								<TextBlock x:Name="TxtServo0" Text="Servo 0: 0.00°" Grid.Row="0" Grid.Column="0" Margin="0,0,0,10" Foreground="Black"/>
-								<TextBlock x:Name="TxtServo1" Text="Servo 1: 0.00°" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" Foreground="Black"/>
-								<TextBlock x:Name="TxtServo2" Text="Servo 2: 0.00°" Grid.Row="1" Grid.Column="0" Margin="0,0,0,10" Foreground="Black"/>
-								<TextBlock x:Name="TxtServo3" Text="Servo 3: 0.00°" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" Foreground="Black"/>
-								<TextBlock x:Name="TxtServo4" Text="Servo 4: 0.00°" Grid.Row="2" Grid.Column="0" Foreground="Black"/>
-								<TextBlock x:Name="TxtServo5" Text="Servo 5: 0.00°" Grid.Row="2" Grid.Column="1" Foreground="Black"/>
-							</Grid>
-						</Border>
-						<TextBlock Text="Calculated Servo Angles" Background="#F0F0F0" Padding="5,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,0,0,0" Foreground="Black"/>
-					</Grid>
-
-					<Grid>
-						<Border BorderBrush="#C0C0C0" BorderThickness="1" CornerRadius="3" Margin="0,8,0,0" Padding="15,20,15,15" Background="#E3F2FD">
-							<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
-								<TextBlock x:Name="TxtSensorRoll" Text="Roll: 0.0°" Grid.Row="0" Grid.Column="0" Margin="0,0,0,10" Foreground="#0D47A1" FontWeight="SemiBold"/>
-								<TextBlock x:Name="TxtSensorPitch" Text="Pitch: 0.0°" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" Foreground="#0D47A1" FontWeight="SemiBold"/>
-								<TextBlock x:Name="TxtSensorYaw" Text="Yaw: 0.0°" Grid.Row="1" Grid.Column="0" Foreground="#0D47A1" FontWeight="SemiBold"/>
-								<TextBlock x:Name="TxtSensorTemp" Text="Temp: 0.0°C" Grid.Row="1" Grid.Column="1" Foreground="#0D47A1" FontWeight="SemiBold"/>
-							</Grid>
-						</Border>
-						<TextBlock Text="MPU Sensor Data" Background="#F0F0F0" Padding="5,0" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,0,0,0" Foreground="Black"/>
-					</Grid>
-
-				</StackPanel>
-			</ScrollViewer>
-
-			<Border Grid.Column="1" Background="Black" Margin="10,10,10,10" CornerRadius="5" ClipToBounds="True">
-				<local:PlatformView3D x:Name="Visualizer" />
-			</Border>
-
-		</Grid>
-
-		<Grid x:Name="ModalOverlay" Background="#90000000" IsVisible="False" ZIndex="100">
-			<Border Background="White" Width="400" Height="300" CornerRadius="5" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="25">
-				<StackPanel>
-					<TextBlock Text="Connection Settings" FontWeight="Bold" FontSize="18" Foreground="Black" Margin="0,0,0,20"/>
-
-					<RadioButton x:Name="RadioWifi" GroupName="ConnType" Content="Wi-Fi Connection" FontWeight="SemiBold" FontSize="14" Foreground="Black" Margin="0,0,0,5" IsChecked="True"/>
-					<StackPanel Margin="25,0,0,15" IsEnabled="{Binding #RadioWifi.IsChecked}">
-						<TextBox x:Name="TxtWifiUrl" Text="ws://192.168.4.1:81" Width="280" HorizontalAlignment="Left" Padding="5"/>
 					</StackPanel>
+				</Border>
 
-					<RadioButton x:Name="RadioUsb" GroupName="ConnType" Content="USB Serial Connection" FontWeight="SemiBold" FontSize="14" Foreground="Black" Margin="0,0,0,5"/>
-					<StackPanel Margin="25,0,0,15" IsEnabled="{Binding #RadioUsb.IsChecked}">
-						<StackPanel Orientation="Horizontal">
-							<ComboBox x:Name="ComboUsbPort" Width="190" Margin="0,0,10,0"/>
-							<Button Content="Refresh" Width="80" Click="BtnRefreshPorts_Click" Background="#E0E0E0" Foreground="Black" HorizontalContentAlignment="Center"/>
+				<!-- Position -->
+				<Border Classes="section">
+					<StackPanel>
+						<TextBlock Classes="sectionHeader" Text="Position (mm)"/>
+						<Border Classes="sectionBody">
+							<StackPanel>
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="X Trans:" Grid.Column="0"/>
+									<TextBox x:Name="InpPosX" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetPos_Click"
+                                            Tag="X" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldPosX"
+                                        Minimum="-35" Maximum="35"
+                                        ValueChanged="Slider_ValueChanged"/>
+
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="Y Trans:" Grid.Column="0"/>
+									<TextBox x:Name="InpPosY" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetPos_Click"
+                                            Tag="Y" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldPosY"
+                                        Minimum="-35" Maximum="35"
+                                        ValueChanged="Slider_ValueChanged"/>
+
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="Z Trans:" Grid.Column="0"/>
+									<TextBox x:Name="InpPosZ" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetPos_Click"
+                                            Tag="Z" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldPosZ"
+                                        Minimum="-35" Maximum="35"
+                                        ValueChanged="Slider_ValueChanged"/>
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</Border>
+
+				<!-- Rotation -->
+				<Border Classes="section">
+					<StackPanel>
+						<TextBlock Classes="sectionHeader" Text="Rotation (Deg)"/>
+						<Border Classes="sectionBody">
+							<StackPanel>
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="Roll (X):" Grid.Column="0"/>
+									<TextBox x:Name="InpRotX" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetRot_Click"
+                                            Tag="X" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldRotX"
+                                        Minimum="-12" Maximum="12"
+                                        ValueChanged="Slider_ValueChanged"/>
+
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="Pitch (Y):" Grid.Column="0"/>
+									<TextBox x:Name="InpRotY" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetRot_Click"
+                                            Tag="Y" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldRotY"
+                                        Minimum="-12" Maximum="12"
+                                        ValueChanged="Slider_ValueChanged"/>
+
+								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
+									<TextBlock Text="Yaw (Z):" Grid.Column="0"/>
+									<TextBox x:Name="InpRotZ" Text="0"
+                                             Grid.Column="1" Margin="5,0"/>
+									<Button Content="Set" Grid.Column="2"
+                                            Click="BtnSetRot_Click"
+                                            Tag="Z" Padding="4,2"/>
+								</Grid>
+								<Slider x:Name="SldRotZ"
+                                        Minimum="-12" Maximum="12"
+                                        ValueChanged="Slider_ValueChanged"/>
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</Border>
+
+				<!-- Sensor Feedback -->
+				<Border Classes="section" BorderBrush="#2244AA">
+					<StackPanel>
+						<TextBlock Classes="sectionHeader"
+                                   Text="Real-time Sensor Feedback (MPU6050)"/>
+						<Border Classes="sectionBody">
+							<Grid ColumnDefinitions="*,*,*,*">
+								<StackPanel Grid.Column="0" HorizontalAlignment="Center">
+									<TextBlock Text="Roll" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+									<TextBlock x:Name="TxtSensorRoll" Text="0.0°"
+                                               FontSize="16" Foreground="#5599FF"
+                                               HorizontalAlignment="Center"/>
+								</StackPanel>
+								<StackPanel Grid.Column="1" HorizontalAlignment="Center">
+									<TextBlock Text="Pitch" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+									<TextBlock x:Name="TxtSensorPitch" Text="0.0°"
+                                               FontSize="16" Foreground="#5599FF"
+                                               HorizontalAlignment="Center"/>
+								</StackPanel>
+								<StackPanel Grid.Column="2" HorizontalAlignment="Center">
+									<TextBlock Text="Yaw" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+									<TextBlock x:Name="TxtSensorYaw" Text="0.0°"
+                                               FontSize="16" Foreground="#5599FF"
+                                               HorizontalAlignment="Center"/>
+								</StackPanel>
+								<StackPanel Grid.Column="3" HorizontalAlignment="Center">
+									<TextBlock Text="Temp" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+									<TextBlock x:Name="TxtSensorTemp" Text="0.0°C"
+                                               FontSize="16" Foreground="#FF6655"
+                                               HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Grid>
+						</Border>
+					</StackPanel>
+				</Border>
+
+				<!-- Servo Angles -->
+				<Border Classes="section">
+					<StackPanel>
+						<TextBlock Classes="sectionHeader" Text="Servo Angles"/>
+						<Border Classes="sectionBody">
+							<Grid ColumnDefinitions="*,*"
+                                  RowDefinitions="Auto,Auto,Auto">
+								<TextBlock x:Name="TxtServo0" Text="Servo 0: 0.00°"
+                                           Grid.Row="0" Grid.Column="0" Margin="4,2"/>
+								<TextBlock x:Name="TxtServo1" Text="Servo 1: 0.00°"
+                                           Grid.Row="0" Grid.Column="1" Margin="4,2"/>
+								<TextBlock x:Name="TxtServo2" Text="Servo 2: 0.00°"
+                                           Grid.Row="1" Grid.Column="0" Margin="4,2"/>
+								<TextBlock x:Name="TxtServo3" Text="Servo 3: 0.00°"
+                                           Grid.Row="1" Grid.Column="1" Margin="4,2"/>
+								<TextBlock x:Name="TxtServo4" Text="Servo 4: 0.00°"
+                                           Grid.Row="2" Grid.Column="0" Margin="4,2"/>
+								<TextBlock x:Name="TxtServo5" Text="Servo 5: 0.00°"
+                                           Grid.Row="2" Grid.Column="1" Margin="4,2"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+				</Border>
+
+			</StackPanel>
+		</ScrollViewer>
+
+		<!-- ===== 3D VIEWPORT (Silk.NET / OpenGL) =====
+             OpenGlControlBase does NOT expose a Background property — omit it. -->
+		<local:PlatformView3D x:Name="Visualizer" Grid.Column="1"/>
+
+		<!-- ===== MODAL OVERLAY ===== -->
+		<Grid x:Name="ModalOverlay" IsVisible="False"
+              Grid.ColumnSpan="2" Background="#BB000000">
+			<Border Background="#2A2A2A" Width="420" Height="410"
+                    CornerRadius="10"
+                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Padding="25" BorderBrush="#555" BorderThickness="1">
+				<StackPanel>
+					<TextBlock Text="Select Connection Mode"
+                               FontWeight="Bold" FontSize="18"
+                               Margin="0,0,0,20"
+                               HorizontalAlignment="Center"
+                               Foreground="#EEEEEE"/>
+
+					<!-- USB Serial -->
+					<RadioButton x:Name="RadioUsb"
+                                 Content="USB Serial Connection"
+                                 IsChecked="True"
+                                 FontWeight="SemiBold" FontSize="14"
+                                 Margin="0,0,0,4"/>
+					<StackPanel Margin="22,0,0,12">
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<ComboBox x:Name="ComboUsbPort" Width="195"/>
+							<Button Content="Refresh" Width="80"
+                                    Click="BtnRefreshPorts_Click"/>
 						</StackPanel>
 					</StackPanel>
 
-					<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0" Spacing="10">
-						<Button Content="Cancel" Width="90" Height="32" Click="BtnModalCancel_Click" Background="#EEEEEE" Foreground="Black" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
-						<Button Content="Connect" Width="110" Height="32" Click="BtnModalConnect_Click" Background="#4CAF50" Foreground="White" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+					<!-- Wi-Fi -->
+					<RadioButton x:Name="RadioWifi"
+                                 Content="Wi-Fi (WebSocket)"
+                                 FontWeight="SemiBold" FontSize="14"
+                                 Margin="0,0,0,4"/>
+					<StackPanel Margin="22,0,0,12">
+						<TextBox x:Name="TxtWifiUrl"
+                                 Text="ws://192.168.4.1:81"
+                                 Width="285" HorizontalAlignment="Left"/>
+					</StackPanel>
+
+					<!-- RF Dongle -->
+					<RadioButton x:Name="RadioDongle"
+                                 Content="RF Dongle (Arduino Nano)"
+                                 FontWeight="SemiBold" FontSize="14"
+                                 Margin="0,0,0,4"/>
+					<StackPanel Margin="22,0,0,12">
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<ComboBox x:Name="ComboDonglePort" Width="195"/>
+							<Button Content="Refresh" Width="80"
+                                    Click="BtnRefreshPorts_Click"/>
+						</StackPanel>
+					</StackPanel>
+
+					<!-- Action buttons -->
+					<StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Margin="0,14,0,0" Spacing="10">
+						<Button Content="Cancel" Width="90" Height="34"
+                                Click="BtnModalCancel_Click"/>
+						<Button Content="Connect" Width="110" Height="34"
+                                Background="#2E6E3E" Foreground="White"
+                                FontWeight="Bold"
+                                Click="BtnModalConnect_Click"/>
 					</StackPanel>
 				</StackPanel>
 			</Border>

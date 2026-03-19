@@ -3,41 +3,47 @@ using System.Numerics;
 
 namespace stewart_platform
 {
+    /// <summary>
+    /// Inverse-kinematics engine for a 6-DOF Stewart Platform.
+    /// Uses System.Numerics (float) — fully compatible with Avalonia / Silk.NET.
+    /// </summary>
     public class StewartPlatform
     {
-        // --- Config Values ---
+        // --- Dimensions ---
         private float BaseRadius;
         private float PlatformRadius;
         private float HornLength;
         private float RodLength;
         private float InitialHeight;
 
+        // --- Geometry tables (radians) ---
         private float[] BaseAngles;
         private float[] PlatformAngles;
         private float[] Beta;
 
-        // --- Home yaw offset (radians) ---
+        // --- Home yaw offset applied to platform layout ---
         private float HomeYawOffsetRad;
 
-        // --- Public Drawing Points ---
+        // --- Points exposed to the renderer ---
         public Vector3[] BasePoints { get; private set; } = new Vector3[6];
         public Vector3[] PlatformPoints { get; private set; } = new Vector3[6];
         public Vector3[] HornEndPoints { get; private set; } = new Vector3[6];
 
-        // --- Internal Math ---
-        private Vector3[] b = new Vector3[6];
-        private Vector3[] p = new Vector3[6];
+        // --- Internal kinematics vectors ---
+        private Vector3[] b = new Vector3[6];   // base attachment points
+        private Vector3[] p = new Vector3[6];   // platform attachment points (body frame)
+        private Vector3 h0;                   // home height offset
+
+        // --- Computed servo angles (radians) ---
         public float[] Alpha { get; private set; } = new float[6];
 
-        // --- Current Pose ---
+        // --- Current pose (stored for reference) ---
         private Vector3 Translation;
         private Vector3 Rotation;
-        private Vector3 h0;
 
-        // --- Constructor ---
+        // -------------------------------------------------------------------------
         public StewartPlatform(RobotConfig config)
         {
-            // Load dimensions and cast to float
             BaseRadius = (float)config.BaseRadius;
             PlatformRadius = (float)config.PlatformRadius;
             HornLength = (float)config.HornLength;
@@ -61,47 +67,48 @@ namespace stewart_platform
             InitializePoints();
         }
 
+        // -------------------------------------------------------------------------
         private void InitializePoints()
         {
             for (int i = 0; i < 6; i++)
             {
-                // Convert degrees to radians for base and platform layout
                 float baseRad = BaseAngles[i] * MathF.PI / 180.0f;
                 float platRad = PlatformAngles[i] * MathF.PI / 180.0f;
 
-                // Set Base points (b)
                 b[i] = new Vector3(
                     BaseRadius * MathF.Cos(baseRad),
                     BaseRadius * MathF.Sin(baseRad),
-                    0f
-                );
+                    0f);
                 BasePoints[i] = b[i];
 
-                // Set Platform attachment points (p)
+                // The home yaw offset is baked into the body-frame layout of the platform points
                 p[i] = new Vector3(
                     PlatformRadius * MathF.Cos(platRad + HomeYawOffsetRad),
                     PlatformRadius * MathF.Sin(platRad + HomeYawOffsetRad),
-                    0f
-                );
+                    0f);
             }
         }
 
-        public void CalculatePose(float tx, float ty, float tz, float rx, float ry, float rz)
+        // -------------------------------------------------------------------------
+        /// <summary>
+        /// Compute full inverse kinematics for the given 6-DOF pose.
+        /// tx/ty/tz  — translation in mm.
+        /// rx/ry/rz  — rotation in RADIANS (roll, pitch, yaw).
+        /// </summary>
+        public void CalculatePose(float tx, float ty, float tz,
+                                  float rx, float ry, float rz)
         {
             Translation = new Vector3(tx, ty, tz);
             Rotation = new Vector3(rx, ry, rz);
 
-            // Pre-calculate trig functions for rotation matrix using MathF
-            float cx = MathF.Cos(rx);
-            float sx = MathF.Sin(rx);
-            float cy = MathF.Cos(ry);
-            float sy = MathF.Sin(ry);
-            float cz = MathF.Cos(rz);
-            float sz = MathF.Sin(rz);
+            // Pre-compute rotation matrix trig
+            float cx = MathF.Cos(rx), sx = MathF.Sin(rx);
+            float cy = MathF.Cos(ry), sy = MathF.Sin(ry);
+            float cz = MathF.Cos(rz), sz = MathF.Sin(rz);
 
             for (int i = 0; i < 6; i++)
             {
-                // Apply rotation matrix to platform points
+                // Rotate platform body-frame point by ZYX Euler matrix
                 float qx = (cz * cy) * p[i].X
                          + (cz * sy * sx - sz * cx) * p[i].Y
                          + (cz * sy * cx + sz * sx) * p[i].Z;
@@ -114,34 +121,33 @@ namespace stewart_platform
                          + (cy * sx) * p[i].Y
                          + (cy * cx) * p[i].Z;
 
-                // Translated point q
+                // World-space position of platform attach point
                 Vector3 q = new Vector3(qx, qy, qz) + Translation + h0;
                 PlatformPoints[i] = q;
 
-                // Vector l from base point to translated platform point
-                Vector3 lVector = q - b[i];
+                // IK: find servo angle alpha[i]
+                Vector3 l = q - b[i];
 
-                // Inverse kinematics to find servo angle (Alpha)
-                float L = lVector.LengthSquared() - (RodLength * RodLength) + (HornLength * HornLength);
+                float L = l.LengthSquared() - (RodLength * RodLength) + (HornLength * HornLength);
                 float M = 2.0f * HornLength * (q.Z - b[i].Z);
-                float N = 2.0f * HornLength * (MathF.Cos(Beta[i]) * (q.X - b[i].X) + MathF.Sin(Beta[i]) * (q.Y - b[i].Y));
+                float N = 2.0f * HornLength * (MathF.Cos(Beta[i]) * (q.X - b[i].X)
+                                             + MathF.Sin(Beta[i]) * (q.Y - b[i].Y));
 
                 float val = L / MathF.Sqrt(M * M + N * N);
-
-                // Clamp to avoid NaN errors if target is unreachable
-                val = Math.Clamp(val, -1.0f, 1.0f);
+                val = Math.Clamp(val, -1.0f, 1.0f);   // guard against unreachable targets
 
                 Alpha[i] = MathF.Asin(val) - MathF.Atan2(N, M);
 
-                // Calculate where the horn ends in 3D space
-                float ax = HornLength * MathF.Cos(Alpha[i]) * MathF.Cos(Beta[i]) + b[i].X;
-                float ay = HornLength * MathF.Cos(Alpha[i]) * MathF.Sin(Beta[i]) + b[i].Y;
-                float az = HornLength * MathF.Sin(Alpha[i]) + b[i].Z;
-
-                HornEndPoints[i] = new Vector3(ax, ay, az);
+                // Horn end-point in world space
+                HornEndPoints[i] = new Vector3(
+                    HornLength * MathF.Cos(Alpha[i]) * MathF.Cos(Beta[i]) + b[i].X,
+                    HornLength * MathF.Cos(Alpha[i]) * MathF.Sin(Beta[i]) + b[i].Y,
+                    HornLength * MathF.Sin(Alpha[i]) + b[i].Z);
             }
         }
 
+        // -------------------------------------------------------------------------
+        /// <summary>Returns servo angle in degrees for servo <paramref name="index"/>.</summary>
         public float GetAlphaDegree(int index)
         {
             if (index < 0 || index >= 6) return 0f;

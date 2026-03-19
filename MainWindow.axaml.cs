@@ -1,5 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using System;
 using System.IO.Ports;
@@ -12,11 +14,11 @@ namespace stewart_platform
 {
     public partial class MainWindow : Window
     {
-        // 1. Configuration & Engine
+        // --- Configuration & Engine ---
         RobotConfig config = new RobotConfig();
         StewartPlatform platform;
 
-        // 2. Hardware Comms
+        // --- Hardware Comms ---
         SerialPort? arduinoPort;
         ClientWebSocket? wsClient;
         bool isConnected = false;
@@ -25,7 +27,7 @@ namespace stewart_platform
         DispatcherTimer sendTimer;
         DispatcherTimer movementTimer;
 
-        // 3. Smooth Movement Engine
+        // --- Smooth Movement ---
         private float[] targetValues = new float[6];
         private bool isInternalUpdate = false;
 
@@ -43,16 +45,25 @@ namespace stewart_platform
                 visualizer.Redraw();
             }
 
-            movementTimer = new DispatcherTimer();
-            movementTimer.Interval = TimeSpan.FromMilliseconds(20);
+            // Movement update timer — 50 Hz
+            movementTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(20)
+            };
             movementTimer.Tick += MovementTimer_Tick;
             movementTimer.Start();
 
-            sendTimer = new DispatcherTimer();
-            sendTimer.Interval = TimeSpan.FromMilliseconds(50);
+            // Serial/WebSocket send timer — 20 Hz
+            sendTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(50)
+            };
             sendTimer.Tick += SendTimer_Tick;
         }
 
+        // -------------------------------------------------------------------------
+        // MOVEMENT TIMER — recalculate kinematics and refresh 3D view
+        // -------------------------------------------------------------------------
         private void MovementTimer_Tick(object? sender, EventArgs e)
         {
             platform.CalculatePose(
@@ -60,111 +71,109 @@ namespace stewart_platform
                 targetValues[3], targetValues[4], targetValues[5]
             );
 
-            var visualizer = this.FindControl<PlatformView3D>("Visualizer");
-            visualizer?.Redraw();
-
+            this.FindControl<PlatformView3D>("Visualizer")?.Redraw();
             UpdateUI();
         }
 
         private void UpdateUI()
         {
-            var txt0 = this.FindControl<TextBlock>("TxtServo0");
-            if (txt0 != null) txt0.Text = $"Servo 0: {platform.GetAlphaDegree(0):F2}°";
-
-            var txt1 = this.FindControl<TextBlock>("TxtServo1");
-            if (txt1 != null) txt1.Text = $"Servo 1: {platform.GetAlphaDegree(1):F2}°";
-
-            var txt2 = this.FindControl<TextBlock>("TxtServo2");
-            if (txt2 != null) txt2.Text = $"Servo 2: {platform.GetAlphaDegree(2):F2}°";
-
-            var txt3 = this.FindControl<TextBlock>("TxtServo3");
-            if (txt3 != null) txt3.Text = $"Servo 3: {platform.GetAlphaDegree(3):F2}°";
-
-            var txt4 = this.FindControl<TextBlock>("TxtServo4");
-            if (txt4 != null) txt4.Text = $"Servo 4: {platform.GetAlphaDegree(4):F2}°";
-
-            var txt5 = this.FindControl<TextBlock>("TxtServo5");
-            if (txt5 != null) txt5.Text = $"Servo 5: {platform.GetAlphaDegree(5):F2}°";
-        }
-
-        public void Slider_ValueChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-        {
-            if (isInternalUpdate) return;
-
-            if (sender is Slider slider)
+            var labels = new string[] { "TxtServo0", "TxtServo1", "TxtServo2", "TxtServo3", "TxtServo4", "TxtServo5" };
+            for (int i = 0; i < 6; i++)
             {
-                float value = (float)slider.Value;
-
-                switch (slider.Name)
-                {
-                    case "SldPosX":
-                        targetValues[0] = value;
-                        var inpX = this.FindControl<TextBox>("InpPosX");
-                        if (inpX != null) inpX.Text = value.ToString("F1");
-                        break;
-                    case "SldPosY":
-                        targetValues[1] = value;
-                        var inpY = this.FindControl<TextBox>("InpPosY");
-                        if (inpY != null) inpY.Text = value.ToString("F1");
-                        break;
-                    case "SldPosZ":
-                        targetValues[2] = value;
-                        var inpZ = this.FindControl<TextBox>("InpPosZ");
-                        if (inpZ != null) inpZ.Text = value.ToString("F1");
-                        break;
-                    case "SldRotX":
-                        targetValues[3] = value * (MathF.PI / 180f);
-                        var inpRx = this.FindControl<TextBox>("InpRotX");
-                        if (inpRx != null) inpRx.Text = value.ToString("F1");
-                        break;
-                    case "SldRotY":
-                        targetValues[4] = value * (MathF.PI / 180f);
-                        var inpRy = this.FindControl<TextBox>("InpRotY");
-                        if (inpRy != null) inpRy.Text = value.ToString("F1");
-                        break;
-                    case "SldRotZ":
-                        targetValues[5] = value * (MathF.PI / 180f);
-                        var inpRz = this.FindControl<TextBox>("InpRotZ");
-                        if (inpRz != null) inpRz.Text = value.ToString("F1");
-                        break;
-                }
+                var tb = this.FindControl<TextBlock>(labels[i]);
+                if (tb != null) tb.Text = $"Servo {i}: {platform.GetAlphaDegree(i):F2}°";
             }
         }
 
+        // -------------------------------------------------------------------------
+        // SLIDER CHANGED
+        // -------------------------------------------------------------------------
+        public void Slider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (isInternalUpdate) return;
+            if (sender is not Slider slider) return;
+
+            float value = (float)slider.Value;
+
+            switch (slider.Name)
+            {
+                case "SldPosX":
+                    targetValues[0] = value;
+                    SetTextBoxSilent("InpPosX", value.ToString("F1"));
+                    break;
+                case "SldPosY":
+                    targetValues[1] = value;
+                    SetTextBoxSilent("InpPosY", value.ToString("F1"));
+                    break;
+                case "SldPosZ":
+                    targetValues[2] = value;
+                    SetTextBoxSilent("InpPosZ", value.ToString("F1"));
+                    break;
+                case "SldRotX":
+                    targetValues[3] = value * (MathF.PI / 180f);
+                    SetTextBoxSilent("InpRotX", value.ToString("F1"));
+                    break;
+                case "SldRotY":
+                    targetValues[4] = value * (MathF.PI / 180f);
+                    SetTextBoxSilent("InpRotY", value.ToString("F1"));
+                    break;
+                case "SldRotZ":
+                    targetValues[5] = value * (MathF.PI / 180f);
+                    SetTextBoxSilent("InpRotZ", value.ToString("F1"));
+                    break;
+            }
+        }
+
+        private void SetTextBoxSilent(string name, string text)
+        {
+            var tb = this.FindControl<TextBox>(name);
+            if (tb != null) tb.Text = text;
+        }
+
+        // -------------------------------------------------------------------------
+        // SET POSITION from text boxes
+        // -------------------------------------------------------------------------
         public void BtnSetPos_Click(object? sender, RoutedEventArgs e)
         {
             isInternalUpdate = true;
             try
             {
-                var inpX = this.FindControl<TextBox>("InpPosX");
-                var inpY = this.FindControl<TextBox>("InpPosY");
-                var inpZ = this.FindControl<TextBox>("InpPosZ");
-
-                if (inpX != null && float.TryParse(inpX.Text, out float x)) { targetValues[0] = x; var sld = this.FindControl<Slider>("SldPosX"); if (sld != null) sld.Value = x; }
-                if (inpY != null && float.TryParse(inpY.Text, out float y)) { targetValues[1] = y; var sld = this.FindControl<Slider>("SldPosY"); if (sld != null) sld.Value = y; }
-                if (inpZ != null && float.TryParse(inpZ.Text, out float z)) { targetValues[2] = z; var sld = this.FindControl<Slider>("SldPosZ"); if (sld != null) sld.Value = z; }
+                TryApplyTextToSlider("InpPosX", "SldPosX", ref targetValues[0], false);
+                TryApplyTextToSlider("InpPosY", "SldPosY", ref targetValues[1], false);
+                TryApplyTextToSlider("InpPosZ", "SldPosZ", ref targetValues[2], false);
             }
-            catch { }
-            isInternalUpdate = false;
+            finally { isInternalUpdate = false; }
         }
 
+        // -------------------------------------------------------------------------
+        // SET ROTATION from text boxes
+        // -------------------------------------------------------------------------
         public void BtnSetRot_Click(object? sender, RoutedEventArgs e)
         {
             isInternalUpdate = true;
             try
             {
-                var inpRx = this.FindControl<TextBox>("InpRotX");
-                var inpRy = this.FindControl<TextBox>("InpRotY");
-                var inpRz = this.FindControl<TextBox>("InpRotZ");
-
-                if (inpRx != null && float.TryParse(inpRx.Text, out float rx)) { targetValues[3] = rx * (MathF.PI / 180f); var sld = this.FindControl<Slider>("SldRotX"); if (sld != null) sld.Value = rx; }
-                if (inpRy != null && float.TryParse(inpRy.Text, out float ry)) { targetValues[4] = ry * (MathF.PI / 180f); var sld = this.FindControl<Slider>("SldRotY"); if (sld != null) sld.Value = ry; }
-                if (inpRz != null && float.TryParse(inpRz.Text, out float rz)) { targetValues[5] = rz * (MathF.PI / 180f); var sld = this.FindControl<Slider>("SldRotZ"); if (sld != null) sld.Value = rz; }
+                TryApplyTextToSlider("InpRotX", "SldRotX", ref targetValues[3], true);
+                TryApplyTextToSlider("InpRotY", "SldRotY", ref targetValues[4], true);
+                TryApplyTextToSlider("InpRotZ", "SldRotZ", ref targetValues[5], true);
             }
-            catch { }
-            isInternalUpdate = false;
+            finally { isInternalUpdate = false; }
         }
 
+        private void TryApplyTextToSlider(string inputName, string sliderName, ref float target, bool toRadians)
+        {
+            var inp = this.FindControl<TextBox>(inputName);
+            var sld = this.FindControl<Slider>(sliderName);
+            if (inp != null && sld != null && float.TryParse(inp.Text, out float val))
+            {
+                sld.Value = val;
+                target = toRadians ? val * (MathF.PI / 180f) : val;
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // RESET — smooth animated return to home
+        // -------------------------------------------------------------------------
         public async void BtnReset_Click(object? sender, RoutedEventArgs e)
         {
             if (isInternalUpdate) return;
@@ -197,45 +206,42 @@ namespace stewart_platform
                 (float)sldRotX.Value, (float)sldRotY.Value, (float)sldRotZ.Value
             };
 
-            int steps = 30;
-            int delayMs = 15;
+            const int steps = 30;
+            const int delayMs = 15;
 
             for (int step = 1; step <= steps; step++)
             {
                 float progress = (float)step / steps;
                 float ease = 1.0f - MathF.Pow(1.0f - progress, 3);
 
-                float currentX = startValues[0] * (1 - ease);
-                float currentY = startValues[1] * (1 - ease);
-                float currentZ = startValues[2] * (1 - ease);
-                float currentRx = startValues[3] * (1 - ease);
-                float currentRy = startValues[4] * (1 - ease);
-                float currentRz = startValues[5] * (1 - ease);
+                float cx = startValues[0] * (1 - ease);
+                float cy = startValues[1] * (1 - ease);
+                float cz = startValues[2] * (1 - ease);
+                float crx = startValues[3] * (1 - ease);
+                float cry = startValues[4] * (1 - ease);
+                float crz = startValues[5] * (1 - ease);
 
-                sldPosX.Value = currentX;
-                sldPosY.Value = currentY;
-                sldPosZ.Value = currentZ;
-                sldRotX.Value = currentRx;
-                sldRotY.Value = currentRy;
-                sldRotZ.Value = currentRz;
+                sldPosX.Value = cx; sldPosY.Value = cy; sldPosZ.Value = cz;
+                sldRotX.Value = crx; sldRotY.Value = cry; sldRotZ.Value = crz;
 
-                if (inpPosX != null) inpPosX.Text = currentX.ToString("F1");
-                if (inpPosY != null) inpPosY.Text = currentY.ToString("F1");
-                if (inpPosZ != null) inpPosZ.Text = currentZ.ToString("F1");
-                if (inpRotX != null) inpRotX.Text = currentRx.ToString("F1");
-                if (inpRotY != null) inpRotY.Text = currentRy.ToString("F1");
-                if (inpRotZ != null) inpRotZ.Text = currentRz.ToString("F1");
+                if (inpPosX != null) inpPosX.Text = cx.ToString("F1");
+                if (inpPosY != null) inpPosY.Text = cy.ToString("F1");
+                if (inpPosZ != null) inpPosZ.Text = cz.ToString("F1");
+                if (inpRotX != null) inpRotX.Text = crx.ToString("F1");
+                if (inpRotY != null) inpRotY.Text = cry.ToString("F1");
+                if (inpRotZ != null) inpRotZ.Text = crz.ToString("F1");
 
-                targetValues[0] = currentX;
-                targetValues[1] = currentY;
-                targetValues[2] = currentZ;
-                targetValues[3] = currentRx * (MathF.PI / 180f);
-                targetValues[4] = currentRy * (MathF.PI / 180f);
-                targetValues[5] = currentRz * (MathF.PI / 180f);
+                targetValues[0] = cx;
+                targetValues[1] = cy;
+                targetValues[2] = cz;
+                targetValues[3] = crx * (MathF.PI / 180f);
+                targetValues[4] = cry * (MathF.PI / 180f);
+                targetValues[5] = crz * (MathF.PI / 180f);
 
                 await Task.Delay(delayMs);
             }
 
+            // Snap to exact zero
             sldPosX.Value = 0; sldPosY.Value = 0; sldPosZ.Value = 0;
             sldRotX.Value = 0; sldRotY.Value = 0; sldRotZ.Value = 0;
 
@@ -251,9 +257,13 @@ namespace stewart_platform
             isInternalUpdate = false;
         }
 
+        // -------------------------------------------------------------------------
+        // CONNECT / DISCONNECT button
+        // -------------------------------------------------------------------------
         public void BtnConnect_Click(object? sender, RoutedEventArgs e)
         {
             var btnConnect = this.FindControl<Button>("BtnConnect");
+
             if (btnConnect?.Content?.ToString() == "Disconnect")
             {
                 isConnected = false;
@@ -267,7 +277,7 @@ namespace stewart_platform
                 if (txtStatus != null)
                 {
                     txtStatus.Text = "Disconnected";
-                    txtStatus.Foreground = Avalonia.Media.Brushes.Red;
+                    txtStatus.Foreground = Brushes.Red;
                 }
             }
             else
@@ -278,6 +288,9 @@ namespace stewart_platform
             }
         }
 
+        // -------------------------------------------------------------------------
+        // MODAL buttons
+        // -------------------------------------------------------------------------
         public void BtnModalCancel_Click(object? sender, RoutedEventArgs e)
         {
             var modal = this.FindControl<Grid>("ModalOverlay");
@@ -289,7 +302,6 @@ namespace stewart_platform
             RefreshPorts();
         }
 
-        // Restored EXACTLY to match your old WPF app logic
         public async void BtnModalConnect_Click(object? sender, RoutedEventArgs e)
         {
             var radioWifi = this.FindControl<RadioButton>("RadioWifi");
@@ -297,7 +309,6 @@ namespace stewart_platform
 
             bool isWifi = radioWifi?.IsChecked == true;
             bool isUsb = radioUsb?.IsChecked == true;
-
             isWifiMode = isWifi;
 
             var txtStatus = this.FindControl<TextBlock>("TxtStatus");
@@ -306,24 +317,30 @@ namespace stewart_platform
             {
                 if (isWifi)
                 {
-                    var txtWifiUrl = this.FindControl<TextBox>("TxtWifiUrl");
-                    string url = txtWifiUrl?.Text ?? "ws://192.168.4.1:81";
-
+                    string url = this.FindControl<TextBox>("TxtWifiUrl")?.Text ?? "ws://192.168.4.1:81";
                     wsClient = new ClientWebSocket();
                     await wsClient.ConnectAsync(new Uri(url), CancellationToken.None);
-
                     _ = Task.Run(() => ReceiveLoop());
                 }
                 else if (isUsb)
                 {
-                    var comboSerial = this.FindControl<ComboBox>("ComboUsbPort");
-                    string? portName = comboSerial?.SelectedItem as string;
-
+                    string? portName = this.FindControl<ComboBox>("ComboUsbPort")?.SelectedItem as string;
                     if (string.IsNullOrEmpty(portName)) throw new Exception("No COM port selected.");
 
                     arduinoPort = new SerialPort(portName, 115200);
                     arduinoPort.DataReceived += SerialPort_DataReceived;
                     arduinoPort.Open();
+                }
+                else
+                {
+                    // RF Dongle path — same as USB but uses ComboDonglePort
+                    string? portName = this.FindControl<ComboBox>("ComboDonglePort")?.SelectedItem as string;
+                    if (string.IsNullOrEmpty(portName)) throw new Exception("No dongle port selected.");
+
+                    arduinoPort = new SerialPort(portName, 115200);
+                    arduinoPort.DataReceived += SerialPort_DataReceived;
+                    arduinoPort.Open();
+                    isWifiMode = false;
                 }
 
                 isConnected = true;
@@ -331,10 +348,8 @@ namespace stewart_platform
 
                 if (txtStatus != null)
                 {
-                    if (isWifi) txtStatus.Text = "Connected (Wi-Fi)";
-                    else if (isUsb) txtStatus.Text = "Connected (USB Serial)";
-
-                    txtStatus.Foreground = Avalonia.Media.Brushes.Green;
+                    txtStatus.Text = isWifi ? "Connected (Wi-Fi)" : "Connected (USB Serial)";
+                    txtStatus.Foreground = Brushes.Green;
                 }
 
                 var btnConnect = this.FindControl<Button>("BtnConnect");
@@ -342,11 +357,11 @@ namespace stewart_platform
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Connection Error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Connection] Error: {ex.Message}");
                 if (txtStatus != null)
                 {
                     txtStatus.Text = "Connection Failed!";
-                    txtStatus.Foreground = Avalonia.Media.Brushes.Red;
+                    txtStatus.Foreground = Brushes.Red;
                 }
             }
             finally
@@ -356,6 +371,9 @@ namespace stewart_platform
             }
         }
 
+        // -------------------------------------------------------------------------
+        // SERIAL / WEBSOCKET COMMS
+        // -------------------------------------------------------------------------
         private void RefreshPorts()
         {
             var ports = SerialPort.GetPortNames();
@@ -366,9 +384,15 @@ namespace stewart_platform
                 comboUsb.ItemsSource = ports;
                 if (comboUsb.ItemCount > 0) comboUsb.SelectedIndex = 0;
             }
+
+            var comboDongle = this.FindControl<ComboBox>("ComboDonglePort");
+            if (comboDongle != null)
+            {
+                comboDongle.ItemsSource = ports;
+                if (comboDongle.ItemCount > 0) comboDongle.SelectedIndex = 0;
+            }
         }
 
-        // Restored to pure single-line read (Doesn't block the buffer like a while loop)
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             try
@@ -397,10 +421,7 @@ namespace stewart_platform
                         ProcessIncomingSensorData(message);
                     }
                 }
-                catch
-                {
-                    break;
-                }
+                catch { break; }
             }
         }
 
@@ -408,62 +429,78 @@ namespace stewart_platform
         {
             try
             {
-                // .Trim() actively removes invisible \r and \n characters
                 data = data.Trim();
-                if (!string.IsNullOrWhiteSpace(data) && data.StartsWith("FB:"))
+                if (string.IsNullOrWhiteSpace(data) || !data.StartsWith("FB:")) return;
+
+                string[] parts = data.Substring(3).Split(',');
+                if (parts.Length < 4) return;
+
+                Dispatcher.UIThread.Post(() =>
                 {
-                    string[] parts = data.Substring(3).Split(',');
-                    if (parts.Length >= 4)
-                    {
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            var txtRoll = this.FindControl<TextBlock>("TxtSensorRoll");
-                            if (txtRoll != null) txtRoll.Text = $"Roll: {parts[0]}°";
+                    var r = this.FindControl<TextBlock>("TxtSensorRoll");
+                    var p = this.FindControl<TextBlock>("TxtSensorPitch");
+                    var y = this.FindControl<TextBlock>("TxtSensorYaw");
+                    var t = this.FindControl<TextBlock>("TxtSensorTemp");
 
-                            var txtPitch = this.FindControl<TextBlock>("TxtSensorPitch");
-                            if (txtPitch != null) txtPitch.Text = $"Pitch: {parts[1]}°";
-
-                            var txtYaw = this.FindControl<TextBlock>("TxtSensorYaw");
-                            if (txtYaw != null) txtYaw.Text = $"Yaw: {parts[2]}°";
-
-                            var txtTemp = this.FindControl<TextBlock>("TxtSensorTemp");
-                            if (txtTemp != null) txtTemp.Text = $"Temp: {parts[3]}°C";
-                        });
-                    }
-                }
+                    if (r != null) r.Text = $"Roll: {parts[0]}°";
+                    if (p != null) p.Text = $"Pitch: {parts[1]}°";
+                    if (y != null) y.Text = $"Yaw: {parts[2]}°";
+                    if (t != null) t.Text = $"Temp: {parts[3]}°C";
+                });
             }
             catch { }
         }
 
-        // --- CRITICAL FIXES APPLIED HERE ---
         private async void SendTimer_Tick(object? sender, EventArgs e)
         {
             if (!isConnected) return;
-
-            // Ensures numbers are strictly formatted with periods (e.g. 12.5) to prevent Arduino parsing failures.
-            string data = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "<{0:F1},{1:F1},{2:F1},{3:F1},{4:F1},{5:F1}>",
-                platform.GetAlphaDegree(0), platform.GetAlphaDegree(1), platform.GetAlphaDegree(2),
-                platform.GetAlphaDegree(3), platform.GetAlphaDegree(4), platform.GetAlphaDegree(5));
 
             try
             {
                 if (isWifiMode && wsClient?.State == WebSocketState.Open)
                 {
-                    // For WebSockets: Send purely the packet string. (NO explicit \n here, or ESP32 packet reader fails)
-                    var bytes = Encoding.UTF8.GetBytes(data);
-                    await wsClient.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    // --- WI-FI FORMAT (WebSocket) ---
+                    // ESP32 webSocketEvent() uses sscanf "%d,%d,%d,%d,%d,%d"
+                    // Values must be integers = angle_degrees * 100
+                    // Example:  "1250,-876,1100,0,0,0"
+                    string wifiData = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{0},{1},{2},{3},{4},{5}",
+                        (int)(platform.GetAlphaDegree(0) * 100f),
+                        (int)(platform.GetAlphaDegree(1) * 100f),
+                        (int)(platform.GetAlphaDegree(2) * 100f),
+                        (int)(platform.GetAlphaDegree(3) * 100f),
+                        (int)(platform.GetAlphaDegree(4) * 100f),
+                        (int)(platform.GetAlphaDegree(5) * 100f));
+
+                    var bytes = Encoding.UTF8.GetBytes(wifiData);
+                    await wsClient.SendAsync(new ArraySegment<byte>(bytes),
+                        WebSocketMessageType.Text, true, CancellationToken.None);
                 }
                 else if (!isWifiMode && arduinoPort != null && arduinoPort.IsOpen)
                 {
-                    // For Serial: Write() safely appends \n WITHOUT the fatal \r that .NET Core WriteLine() injects.
-                    arduinoPort.Write(data + "\n");
+                    // --- USB SERIAL FORMAT ---
+                    // ESP32 loop() expects:
+                    //   byte 0x6A ('j'), byte 0x6A ('j'),
+                    //   then 6x Serial.parseInt() — integers = angle_degrees * 100
+                    // The magic bytes are sent as raw bytes, followed by the
+                    // ASCII integer string that parseInt() will consume.
+                    // Example wire bytes:  j j 1 2 5 0 , - 8 7 6 , ...
+                    int[] vals = new int[6];
+                    for (int i = 0; i < 6; i++)
+                        vals[i] = (int)(platform.GetAlphaDegree(i) * 100f);
+
+                    string intPart = string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{0},{1},{2},{3},{4},{5}",
+                        vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+
+                    // Write the two magic header bytes then the integer payload
+                    arduinoPort.Write(new byte[] { 0x6A, 0x6A }, 0, 2);
+                    arduinoPort.Write(intPart + "\n");
                 }
             }
-            catch
-            {
-                // Ensures UI sliders never freeze during random buffer drops
-            }
+            catch { /* Drop silently — don't freeze the UI */ }
         }
     }
 }
