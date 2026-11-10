@@ -110,6 +110,8 @@
                                                VerticalAlignment="Center"/>
 								</StackPanel>
 
+                                <TextBlock x:Name="TxtLevelingNotice" Text="" IsVisible="False"
+                                           TextWrapping="Wrap" Foreground="#FFCC66" FontWeight="SemiBold"/>
 								<!-- Status display for closed loop -->
 								<Grid ColumnDefinitions="*,*">
 									<StackPanel Grid.Column="0" HorizontalAlignment="Center">
@@ -189,7 +191,7 @@
 				</Border>
 
 				<!-- Rotation Target -->
-				<Border Classes="section">
+				<Border Classes="section" x:Name="PanelRotation">
 					<StackPanel>
 						<TextBlock x:Name="HeaderRotation" Classes="sectionHeader"
                                    Text="Target Rotation (Deg)"/>
