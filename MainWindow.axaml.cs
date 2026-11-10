@@ -1,8 +1,9 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using stewart_platform.Control;
 using System;
 using System.Globalization;
 using System.IO.Ports;
@@ -40,7 +41,21 @@ namespace stewart_platform
         private bool isClosedLoop = false;
         private float target_roll = 0, target_pitch = 0, target_yaw = 0;
         private float current_roll = 0, current_pitch = 0, current_yaw = 0;
-        private const float POSITION_TOLERANCE = 0.5f;
+        private const float POSITION_TOLERANCE = 1.0f;
+        private enum LevelingPhase { OpenLoop, ReturningToZero, Leveling, ManualReady }
+        private LevelingPhase levelingPhase = LevelingPhase.OpenLoop;
+        private readonly PlatformLevelController levelController = new PlatformLevelController();
+        private readonly float[] appliedValues = new float[6];
+        private float heldRollTrim, heldPitchTrim;
+        private bool hasFeedback;
+        private DateTime lastFeedbackUtc = DateTime.MinValue;
+        private DateTime lastControllerUtc = DateTime.MinValue;
+        private bool commandsInhibited;
+        private bool sending;
+        private const float MaxSafeTilt = 8f;
+        private readonly DispatcherTimer levelTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        private static readonly string[] SliderNames = { "SldPosX", "SldPosY", "SldPosZ", "SldRotX", "SldRotY", "SldRotZ" };
+        private static readonly string[] InputNames = { "InpPosX", "InpPosY", "InpPosZ", "InpRotX", "InpRotY", "InpRotZ" };
 
         public MainWindow()
         {
@@ -66,6 +81,8 @@ namespace stewart_platform
             // Sends pre-computed IK angles to ESP32 while in open-loop mode.
             sendTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             sendTimer.Tick += SendTimer_Tick;
+            levelTimer.Tick += LevelTimer_Tick;
+            levelTimer.Start();
 
             UpdateModeUI();
         }
@@ -75,23 +92,120 @@ namespace stewart_platform
         // ─────────────────────────────────────────────────────────────
         private void MovementTimer_Tick(object? sender, EventArgs e)
         {
+            if (levelingPhase == LevelingPhase.ReturningToZero)
+            {
+                if (!FeedbackFresh()) { InhibitCommands("Sensor timeout during zero return"); return; }
+                bool done = true;
+                isInternalUpdate = true;
+                try
+                {
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float current = targetValues[i];
+                        float step = i < 3 ? 0.5f : 0.1f * MathF.PI / 180f;
+                        if (MathF.Abs(current) > step) { targetValues[i] -= MathF.Sign(current) * step; done = false; }
+                        else targetValues[i] = 0;
+                        SetAxisDisplay(i, i < 3 ? targetValues[i] : targetValues[i] * 180f / MathF.PI);
+                    }
+                }
+                finally { isInternalUpdate = false; }
+                ApplyCurrentPose();
+                if (done) BeginLeveling();
+            }
+            else if (levelingPhase != LevelingPhase.Leveling)
+                ApplyCurrentPose();
+            this.FindControl<PlatformView3D>("Visualizer")?.Redraw();
+            UpdateServoUI();
+        }
+
+        private void SetAxisDisplay(int index, float value)
+        {
+            var slider = this.FindControl<Slider>(SliderNames[index]);
+            if (slider != null) slider.Value = value;
+            SetTextBoxSilent(InputNames[index], value.ToString("F1", CultureInfo.InvariantCulture));
+        }
+
+        private void ApplyCurrentPose()
+        {
+            Array.Copy(targetValues, appliedValues, 6);
+            if (isClosedLoop)
+            {
+                appliedValues[3] += heldRollTrim * (MathF.PI / 180f);
+                appliedValues[4] += heldPitchTrim * (MathF.PI / 180f);
+            }
+            platform.CalculatePose(appliedValues[0], appliedValues[1], appliedValues[2],
+                appliedValues[3], appliedValues[4], appliedValues[5]);
+        }
+
+        private bool FeedbackFresh() => hasFeedback &&
+            (DateTime.UtcNow - lastFeedbackUtc).TotalMilliseconds < 350;
+
+        private bool CanLevel()
+        {
+            if (!isConnected || commandsInhibited) { SetNotice("Connect the ESP32 before leveling.", true); return false; }
+            if (!FeedbackFresh() || MathF.Abs(current_roll) > 45 || MathF.Abs(current_pitch) > 45)
+            { SetNotice("Recent valid MPU6050 roll/pitch data is required.", true); return false; }
+            return true;
+        }
+
+        private void BeginReturnToZero()
+        {
+            if (!CanLevel()) return;
+            isClosedLoop = true;
+            levelingPhase = LevelingPhase.ReturningToZero;
+            UpdateModeUI();
+        }
+
+        private void BeginLeveling()
+        {
+            levelingPhase = LevelingPhase.Leveling;
+            levelController.ResetWithTrim((int)MathF.Round(heldRollTrim), (int)MathF.Round(heldPitchTrim));
+            lastControllerUtc = DateTime.UtcNow;
+            ApplyCurrentPose();
+            UpdateModeUI();
+        }
+
+        private void LevelTimer_Tick(object? sender, EventArgs e)
+        {
+            if (levelingPhase != LevelingPhase.Leveling) return;
+            if (!isConnected || !FeedbackFresh())
+            { InhibitCommands("Sensor feedback lost. Disconnect and inspect hardware."); return; }
+            DateTime now = DateTime.UtcNow;
+            double dt = (now - lastControllerUtc).TotalSeconds;
+            lastControllerUtc = now;
             try
             {
-                if (!isClosedLoop)
-                    platform.CalculatePose(
-                        targetValues[0], targetValues[1], targetValues[2],
-                        targetValues[3], targetValues[4], targetValues[5]);
-                else
-                    platform.CalculatePose(0, 0, 0,
-                        target_roll * (MathF.PI / 180f),
-                        target_pitch * (MathF.PI / 180f),
-                        target_yaw * (MathF.PI / 180f));
-
-                this.FindControl<PlatformView3D>("Visualizer")?.Redraw();
-                UpdateServoUI();
+                var (roll, pitch) = levelController.Update(0, 0, current_roll, current_pitch, dt, now);
+                heldRollTrim = (float)Math.Clamp(roll, -MaxSafeTilt, MaxSafeTilt);
+                heldPitchTrim = (float)Math.Clamp(pitch, -MaxSafeTilt, MaxSafeTilt);
+                ApplyCurrentPose();
+                if (levelController.IsStable)
+                {
+                    levelingPhase = LevelingPhase.ManualReady;
+                    UpdateModeUI();
+                }
+                else if (levelController.IsCorrectionLimited)
+                    SetNotice("Correction limit reached. Check sensor direction and geometry.", true);
             }
-            catch { }
+            catch (Exception ex) { InhibitCommands("Controller error: " + ex.Message); }
         }
+
+        private void InhibitCommands(string reason)
+        {
+            commandsInhibited = true;
+            isClosedLoop = false;
+            levelingPhase = LevelingPhase.OpenLoop;
+            UpdateModeUI();
+            SetNotice(reason + " Commands stopped until reconnect.", true);
+        }
+
+        private void SetNotice(string message, bool show)
+        {
+            var notice = this.FindControl<TextBlock>("TxtLevelingNotice");
+            if (notice != null) { notice.Text = message; notice.IsVisible = show; }
+        }
+
+        
 
         private void StatusTimer_Tick(object? sender, EventArgs e)
         {
@@ -106,7 +220,16 @@ namespace stewart_platform
         // ─────────────────────────────────────────────────────────────
         private async void SendTimer_Tick(object? sender, EventArgs e)
         {
-            if (!isConnected || isClosedLoop) return;
+            if (!isConnected || sending || commandsInhibited) return;
+            if (isClosedLoop && !FeedbackFresh())
+            { InhibitCommands("Sensor timeout"); return; }
+            for (int i = 0; i < 6; i++)
+            {
+                float angle = platform.GetAlphaDegree(i);
+                if (float.IsNaN(angle) || float.IsInfinity(angle) || MathF.Abs(angle) > 90f)
+                { if (isClosedLoop) InhibitCommands("Unsafe servo angle"); return; }
+            }
+            sending = true;
             try
             {
                 // Format: "v0,v1,v2,v3,v4,v5" — integers = angle_degrees × 100
@@ -130,7 +253,8 @@ namespace stewart_platform
                     arduinoPort.Write(data + "\n");
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Servo send failed: " + ex.Message); }
+            finally { sending = false; }
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -153,37 +277,19 @@ namespace stewart_platform
             var ep = this.FindControl<TextBlock>("TxtErrPitch");
             var ey = this.FindControl<TextBlock>("TxtErrYaw");
             var ls = this.FindControl<TextBlock>("TxtLoopStatus");
-
-            if (!isClosedLoop)
+            if (er != null) er.Text = isClosedLoop ? $"{levelController.RollError:+0;-0;0}°" : "—";
+            if (ep != null) ep.Text = isClosedLoop ? $"{levelController.PitchError:+0;-0;0}°" : "—";
+            if (ey != null) ey.Text = "—"; // MPU6050 yaw is gyro-integrated, not absolute.
+            if (ls != null) ls.Text = levelingPhase switch
             {
-                if (er != null) { er.Text = "—"; er.Foreground = Brushes.Gray; }
-                if (ep != null) { ep.Text = "—"; ep.Foreground = Brushes.Gray; }
-                if (ey != null) { ey.Text = "—"; ey.Foreground = Brushes.Gray; }
-                if (ls != null) { ls.Text = "—"; ls.Foreground = Brushes.Gray; }
-                return;
-            }
-
-            float errR = target_roll - current_roll;
-            float errP = target_pitch - current_pitch;
-            float errY = target_yaw - current_yaw;
-
-            IBrush good = new SolidColorBrush(Color.Parse("#55FF99"));
-            IBrush bad = new SolidColorBrush(Color.Parse("#FFAA33"));
-
-            if (er != null) { er.Text = $"{errR:+0.0;-0.0}°"; er.Foreground = MathF.Abs(errR) < POSITION_TOLERANCE ? good : bad; }
-            if (ep != null) { ep.Text = $"{errP:+0.0;-0.0}°"; ep.Foreground = MathF.Abs(errP) < POSITION_TOLERANCE ? good : bad; }
-            if (ey != null) { ey.Text = $"{errY:+0.0;-0.0}°"; ey.Foreground = MathF.Abs(errY) < POSITION_TOLERANCE ? good : bad; }
-
-            bool locked = MathF.Abs(errR) < POSITION_TOLERANCE &&
-                          MathF.Abs(errP) < POSITION_TOLERANCE &&
-                          MathF.Abs(errY) < POSITION_TOLERANCE;
-
-            if (ls != null)
-            {
-                ls.Text = locked ? "✓ LOCKED" : "▶ MOVING";
-                ls.Foreground = locked ? good : bad;
-            }
+                LevelingPhase.ReturningToZero => "RETURNING TO ZERO",
+                LevelingPhase.Leveling => levelController.IsCorrectionLimited ? "LIMIT REACHED" : "LEVELING…",
+                LevelingPhase.ManualReady => "STABLE — MANUAL READY",
+                _ => "OPEN LOOP"
+            };
         }
+
+        
 
         private void UpdateSensorDisplay()
         {
@@ -191,246 +297,129 @@ namespace stewart_platform
             var sp = this.FindControl<TextBlock>("TxtSensorPitch");
             var sy = this.FindControl<TextBlock>("TxtSensorYaw");
 
-            if (sr != null) sr.Text = $"{current_roll:F1}°";
-            if (sp != null) sp.Text = $"{current_pitch:F1}°";
-            if (sy != null) sy.Text = $"{current_yaw:F1}°";
+            if (sr != null) sr.Text = $"{MathF.Truncate(current_roll):F0}°";
+            if (sp != null) sp.Text = $"{MathF.Truncate(current_pitch):F0}°";
+            if (sy != null) sy.Text = $"{MathF.Truncate(current_yaw):F0}°";
         }
 
         // ─────────────────────────────────────────────────────────────
         // SEND COMMAND (TARGET / MODE strings)
         // ─────────────────────────────────────────────────────────────
-        private void SendCommand(string command)
-        {
-            if (!isConnected) return;
-            try
-            {
-                if (isWifiMode && wsClient?.State == WebSocketState.Open)
-                {
-                    var bytes = Encoding.UTF8.GetBytes(command + "\n");
-                    _ = wsClient.SendAsync(new ArraySegment<byte>(bytes),
-                        WebSocketMessageType.Text, true, CancellationToken.None);
-                }
-                else if (!isWifiMode && arduinoPort != null && arduinoPort.IsOpen)
-                {
-                    arduinoPort.Write(command + "\n");
-                }
-            }
-            catch { }
-        }
+        // The supplied ESP32 firmware does not process MODE:/TARGET: messages.
+        // Servo control always transmits the same six-number IK payload.
 
-        // ─────────────────────────────────────────────────────────────
-        // SLIDER CHANGED
-        // ─────────────────────────────────────────────────────────────
         public void Slider_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (isInternalUpdate || sender is not Slider slider) return;
+            if (levelingPhase is LevelingPhase.Leveling or LevelingPhase.ReturningToZero) return;
+            int i = Array.IndexOf(SliderNames, slider.Name);
+            if (i < 0) return;
             float value = (float)slider.Value;
-
-            if (isClosedLoop)
-            {
-                switch (slider.Name)
-                {
-                    case "SldRotX": target_roll = value; SetTextBoxSilent("InpRotX", value.ToString("F1")); break;
-                    case "SldRotY": target_pitch = value; SetTextBoxSilent("InpRotY", value.ToString("F1")); break;
-                    case "SldRotZ": target_yaw = value; SetTextBoxSilent("InpRotZ", value.ToString("F1")); break;
-                }
-                SendCommand(string.Format(CultureInfo.InvariantCulture,
-                    "TARGET:{0:F2},{1:F2},{2:F2}", target_roll, target_pitch, target_yaw));
-            }
-            else
-            {
-                switch (slider.Name)
-                {
-                    case "SldPosX": targetValues[0] = value; SetTextBoxSilent("InpPosX", value.ToString("F1")); break;
-                    case "SldPosY": targetValues[1] = value; SetTextBoxSilent("InpPosY", value.ToString("F1")); break;
-                    case "SldPosZ": targetValues[2] = value; SetTextBoxSilent("InpPosZ", value.ToString("F1")); break;
-                    case "SldRotX": targetValues[3] = value * (MathF.PI / 180f); SetTextBoxSilent("InpRotX", value.ToString("F1")); break;
-                    case "SldRotY": targetValues[4] = value * (MathF.PI / 180f); SetTextBoxSilent("InpRotY", value.ToString("F1")); break;
-                    case "SldRotZ": targetValues[5] = value * (MathF.PI / 180f); SetTextBoxSilent("InpRotZ", value.ToString("F1")); break;
-                }
-                // sendTimer handles the actual open-loop packet at 20 Hz
-            }
+            targetValues[i] = i < 3 ? value : value * MathF.PI / 180f;
+            SetTextBoxSilent(InputNames[i], value.ToString("F1", CultureInfo.InvariantCulture));
+            ApplyCurrentPose();
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // MODE TOGGLE
-        // ─────────────────────────────────────────────────────────────
+        
+
         public void BtnModeToggle_Click(object? sender, RoutedEventArgs e)
         {
-            isClosedLoop = !isClosedLoop;
-            UpdateModeUI();
-            if (isConnected)
-                SendCommand(isClosedLoop ? "MODE:CLOSED" : "MODE:OPEN");
+            if (isClosedLoop)
+            {
+                isClosedLoop = false;
+                levelingPhase = LevelingPhase.OpenLoop;
+                heldRollTrim = heldPitchTrim = 0;
+                levelController.Reset();
+                ApplyCurrentPose();
+                UpdateModeUI();
+            }
+            else BeginReturnToZero();
         }
+
+        
 
         private void UpdateModeUI()
         {
-            Dispatcher.UIThread.Post(() =>
+            var btn = this.FindControl<Button>("BtnModeToggle");
+            var status = this.FindControl<TextBlock>("TxtModeStatus");
+            var header = this.FindControl<TextBlock>("HeaderRotation");
+            var pos = this.FindControl<Border>("PanelPosition");
+            var rot = this.FindControl<Border>("PanelRotation");
+            var reset = this.FindControl<Button>("BtnReset");
+            var tol = this.FindControl<TextBlock>("TxtTolerance");
+            bool busy = levelingPhase is LevelingPhase.ReturningToZero or LevelingPhase.Leveling;
+            if (btn != null) btn.Content = isClosedLoop ? "🔒 CLOSED LOOP" : "⚙ OPEN LOOP";
+            if (status != null) status.Text = levelingPhase switch
             {
-                var btn = this.FindControl<Button>("BtnModeToggle");
-                var status = this.FindControl<TextBlock>("TxtModeStatus");
-                var hdr = this.FindControl<TextBlock>("HeaderRotation");
-                var panPos = this.FindControl<Border>("PanelPosition");
-
-                if (isClosedLoop)
-                {
-                    if (btn != null) { btn.Content = "🔒 CLOSED LOOP"; btn.Background = new SolidColorBrush(Color.Parse("#2E4E7E")); }
-                    if (status != null) status.Text = "Automatic positioning — MPU active";
-                    if (hdr != null) hdr.Text = "Target Rotation (Deg) — Closed Loop";
-                    if (panPos != null) panPos.Opacity = 0.35;
-                }
-                else
-                {
-                    if (btn != null) { btn.Content = "⚙ OPEN LOOP"; btn.Background = new SolidColorBrush(Color.Parse("#3A4A3A")); }
-                    if (status != null) status.Text = "Servos follow sliders directly";
-                    if (hdr != null) hdr.Text = "Rotation (Deg) — Open Loop";
-                    if (panPos != null) panPos.Opacity = 1.0;
-                }
-            });
+                LevelingPhase.ReturningToZero => "Returning to zero",
+                LevelingPhase.Leveling => "Auto leveling using MPU6050",
+                LevelingPhase.ManualReady => "Leveled — controls unlocked",
+                _ => "Servos follow sliders"
+            };
+            if (header != null) header.Text = "Rotation (Deg)";
+            if (pos != null) { pos.IsEnabled = !busy; pos.Opacity = busy ? .4 : 1; }
+            if (rot != null) { rot.IsEnabled = !busy; rot.Opacity = busy ? .4 : 1; }
+            if (reset != null) reset.IsEnabled = !busy;
+            if (tol != null) tol.Text = "±1° (whole)";
+            if (busy) SetNotice(levelingPhase == LevelingPhase.ReturningToZero
+                ? "Returning all axes to zero. Please wait…"
+                : "Stabilizing platform. Please wait until stable…", true);
+            else if (levelingPhase == LevelingPhase.ManualReady)
+                SetNotice("Stable. You can now control X/Y/Z and roll/pitch/yaw. Reset to level again.", true);
+            else SetNotice("", false);
         }
 
-        // ─────────────────────────────────────────────────────────────
-        // RESET
-        // ─────────────────────────────────────────────────────────────
-        public async void BtnReset_Click(object? sender, RoutedEventArgs e)
+        
+
+        public void BtnReset_Click(object? sender, RoutedEventArgs e)
         {
-            if (isInternalUpdate) return;
-            isInternalUpdate = true;
-
-            if (isClosedLoop)
-            {
-                float sr = target_roll, sp2 = target_pitch, sy = target_yaw;
-
-                for (int step = 1; step <= 30; step++)
-                {
-                    float ease = 1f - MathF.Pow(1f - (float)step / 30f, 3);
-                    float cr = sr * (1 - ease);
-                    float cp = sp2 * (1 - ease);
-                    float cy = sy * (1 - ease);
-
-                    var rx = this.FindControl<Slider>("SldRotX");
-                    var ry = this.FindControl<Slider>("SldRotY");
-                    var rz = this.FindControl<Slider>("SldRotZ");
-                    if (rx != null) rx.Value = cr;
-                    if (ry != null) ry.Value = cp;
-                    if (rz != null) rz.Value = cy;
-
-                    SetTextBoxSilent("InpRotX", cr.ToString("F1"));
-                    SetTextBoxSilent("InpRotY", cp.ToString("F1"));
-                    SetTextBoxSilent("InpRotZ", cy.ToString("F1"));
-
-                    if (step % 3 == 0 && isConnected)
-                        SendCommand(string.Format(CultureInfo.InvariantCulture,
-                            "TARGET:{0:F2},{1:F2},{2:F2}", cr, cp, cy));
-
-                    await Task.Delay(16);
-                }
-
-                target_roll = target_pitch = target_yaw = 0;
-                var fx = this.FindControl<Slider>("SldRotX");
-                var fy = this.FindControl<Slider>("SldRotY");
-                var fz = this.FindControl<Slider>("SldRotZ");
-                if (fx != null) fx.Value = 0;
-                if (fy != null) fy.Value = 0;
-                if (fz != null) fz.Value = 0;
-                SetTextBoxSilent("InpRotX", "0"); SetTextBoxSilent("InpRotY", "0"); SetTextBoxSilent("InpRotZ", "0");
-                if (isConnected) SendCommand("TARGET:0.00,0.00,0.00");
-            }
-            else
-            {
-                var px = this.FindControl<Slider>("SldPosX");
-                var py = this.FindControl<Slider>("SldPosY");
-                var pz = this.FindControl<Slider>("SldPosZ");
-                var rx = this.FindControl<Slider>("SldRotX");
-                var ry = this.FindControl<Slider>("SldRotY");
-                var rz = this.FindControl<Slider>("SldRotZ");
-                if (px == null || rx == null) { isInternalUpdate = false; return; }
-
-                float[] start = {
-                    (float)px.Value, (float)py!.Value, (float)pz!.Value,
-                    (float)rx.Value, (float)ry!.Value, (float)rz!.Value
-                };
-
-                for (int step = 1; step <= 30; step++)
-                {
-                    float ease = 1f - MathF.Pow(1f - (float)step / 30f, 3);
-                    float cx = start[0] * (1 - ease), cy2 = start[1] * (1 - ease), cz = start[2] * (1 - ease);
-                    float crx = start[3] * (1 - ease), cry = start[4] * (1 - ease), crz = start[5] * (1 - ease);
-
-                    px.Value = cx; py.Value = cy2; pz.Value = cz;
-                    rx.Value = crx; ry.Value = cry; rz.Value = crz;
-
-                    SetTextBoxSilent("InpPosX", cx.ToString("F1")); SetTextBoxSilent("InpPosY", cy2.ToString("F1")); SetTextBoxSilent("InpPosZ", cz.ToString("F1"));
-                    SetTextBoxSilent("InpRotX", crx.ToString("F1")); SetTextBoxSilent("InpRotY", cry.ToString("F1")); SetTextBoxSilent("InpRotZ", crz.ToString("F1"));
-
-                    targetValues[0] = cx; targetValues[1] = cy2; targetValues[2] = cz;
-                    targetValues[3] = crx * (MathF.PI / 180f);
-                    targetValues[4] = cry * (MathF.PI / 180f);
-                    targetValues[5] = crz * (MathF.PI / 180f);
-                    await Task.Delay(16);
-                }
-
-                for (int i = 0; i < 6; i++) targetValues[i] = 0;
-                px.Value = 0; py.Value = 0; pz.Value = 0; rx.Value = 0; ry.Value = 0; rz.Value = 0;
-                SetTextBoxSilent("InpPosX", "0"); SetTextBoxSilent("InpPosY", "0"); SetTextBoxSilent("InpPosZ", "0");
-                SetTextBoxSilent("InpRotX", "0"); SetTextBoxSilent("InpRotY", "0"); SetTextBoxSilent("InpRotZ", "0");
-            }
-
-            isInternalUpdate = false;
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // SET BUTTONS
-        // ─────────────────────────────────────────────────────────────
-        public void BtnSetRot_Click(object? sender, RoutedEventArgs e)
-        {
+            if (levelingPhase is LevelingPhase.ReturningToZero or LevelingPhase.Leveling) return;
+            if (isClosedLoop) { BeginReturnToZero(); return; }
             isInternalUpdate = true;
             try
             {
-                ParseAndApplyRotInput("InpRotX", "SldRotX", ref target_roll, ref targetValues[3]);
-                ParseAndApplyRotInput("InpRotY", "SldRotY", ref target_pitch, ref targetValues[4]);
-                ParseAndApplyRotInput("InpRotZ", "SldRotZ", ref target_yaw, ref targetValues[5]);
-
-                if (isClosedLoop && isConnected)
-                    SendCommand(string.Format(CultureInfo.InvariantCulture,
-                        "TARGET:{0:F2},{1:F2},{2:F2}", target_roll, target_pitch, target_yaw));
+                Array.Clear(targetValues, 0, 6);
+                for (int i = 0; i < 6; i++) SetAxisDisplay(i, 0);
             }
             finally { isInternalUpdate = false; }
+            ApplyCurrentPose();
         }
 
-        private void ParseAndApplyRotInput(string inputName, string sliderName,
-                                            ref float closedTarget, ref float openTarget)
+        
+
+        public void BtnSetRot_Click(object? sender, RoutedEventArgs e)
         {
-            var inp = this.FindControl<TextBox>(inputName);
-            var sld = this.FindControl<Slider>(sliderName);
-            if (inp == null || sld == null) return;
-            if (!float.TryParse(inp.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float val)) return;
-            sld.Value = val;
-            closedTarget = val;
-            openTarget = val * (MathF.PI / 180f);
+            if (levelingPhase is LevelingPhase.ReturningToZero or LevelingPhase.Leveling) return;
+            ApplyInputs(3, 6);
         }
 
         public void BtnSetPos_Click(object? sender, RoutedEventArgs e)
         {
+            if (levelingPhase is LevelingPhase.ReturningToZero or LevelingPhase.Leveling) return;
+            ApplyInputs(0, 3);
+        }
+
+        private void ApplyInputs(int start, int end)
+        {
             isInternalUpdate = true;
             try
             {
-                ParseAndApplyPosInput("InpPosX", "SldPosX", ref targetValues[0]);
-                ParseAndApplyPosInput("InpPosY", "SldPosY", ref targetValues[1]);
-                ParseAndApplyPosInput("InpPosZ", "SldPosZ", ref targetValues[2]);
+                for (int i = start; i < end; i++)
+                {
+                    var input = this.FindControl<TextBox>(InputNames[i]);
+                    if (input == null || !float.TryParse(input.Text, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out float value)) continue;
+                    var slider = this.FindControl<Slider>(SliderNames[i]);
+                    if (slider != null) value = (float)Math.Clamp(value, slider.Minimum, slider.Maximum);
+                    targetValues[i] = i < 3 ? value : value * MathF.PI / 180f;
+                    SetAxisDisplay(i, value);
+                }
             }
             finally { isInternalUpdate = false; }
+            ApplyCurrentPose();
         }
 
-        private void ParseAndApplyPosInput(string inputName, string sliderName, ref float target)
-        {
-            var inp = this.FindControl<TextBox>(inputName);
-            var sld = this.FindControl<Slider>(sliderName);
-            if (inp == null || sld == null) return;
-            if (!float.TryParse(inp.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float val)) return;
-            sld.Value = val;
-            target = val;
-        }
+        
 
         private void SetTextBoxSilent(string name, string text)
         {
@@ -454,9 +443,18 @@ namespace stewart_platform
                 var parts = data.Substring(3).Split(',');
                 if (parts.Length < 3) return;
 
-                float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out current_roll);
-                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out current_pitch);
-                float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out current_yaw);
+                if (!float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float roll) ||
+                    !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float pitch) ||
+                    !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float yaw) ||
+                    !float.IsFinite(roll) || !float.IsFinite(pitch) || !float.IsFinite(yaw)) return;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    current_roll = roll;
+                    current_pitch = pitch;
+                    current_yaw = yaw;
+                    hasFeedback = true;
+                    lastFeedbackUtc = DateTime.UtcNow;
+                });
             }
             catch { }
         }
@@ -481,6 +479,11 @@ namespace stewart_platform
         {
             isConnected = false;
             sendTimer.Stop();
+            isClosedLoop = false;
+            levelingPhase = LevelingPhase.OpenLoop;
+            heldRollTrim = heldPitchTrim = 0;
+            levelController.Reset();
+            UpdateModeUI();
             var btn = this.FindControl<Button>("BtnConnect");
             if (btn != null) btn.Content = "Connect Platform";
             try { arduinoPort?.Close(); wsClient?.Abort(); } catch { }
@@ -540,14 +543,20 @@ namespace stewart_platform
                 }
 
                 isConnected = true;
+                commandsInhibited = false;
+                hasFeedback = false;
+                isClosedLoop = false;
+                levelingPhase = LevelingPhase.OpenLoop;
+                heldRollTrim = heldPitchTrim = 0;
+                levelController.Reset();
+                UpdateModeUI();
                 sendTimer.Start();      // Start open-loop send timer on connect
 
                 if (ts != null) { ts.Text = wifi ? "Connected (Wi-Fi)" : "Connected (USB Serial)"; ts.Foreground = Brushes.Green; }
                 var btn = this.FindControl<Button>("BtnConnect");
                 if (btn != null) btn.Content = "Disconnect";
 
-                await Task.Delay(500);  // Give ESP32 time to be ready
-                SendCommand(isClosedLoop ? "MODE:CLOSED" : "MODE:OPEN");
+                // Controller is in the desktop app. No MODE:/TARGET: firmware commands.
             }
             catch (Exception ex)
             {
