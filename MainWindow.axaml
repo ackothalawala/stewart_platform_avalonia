@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:stewart_platform"
         x:Class="stewart_platform.MainWindow"
-        Title="Stewart Platform V2"
+        Title="Stewart Platform V2 - Closed Loop Control"
         Width="1100" Height="750"
         Background="#1E1E1E">
 
@@ -49,6 +49,12 @@
 		<Style Selector="RadioButton">
 			<Setter Property="Foreground" Value="#DDDDDD"/>
 		</Style>
+		<Style Selector="TextBlock.status-good">
+			<Setter Property="Foreground" Value="#55FF99"/>
+		</Style>
+		<Style Selector="TextBlock.status-moving">
+			<Setter Property="Foreground" Value="#FFAA33"/>
+		</Style>
 	</Window.Styles>
 
 	<Grid>
@@ -91,7 +97,6 @@
 						<Border Classes="sectionBody">
 							<StackPanel Spacing="8">
 								<StackPanel Orientation="Horizontal" Spacing="12">
-									<!-- Big toggle button — colour changes with mode -->
 									<Button x:Name="BtnModeToggle"
                                             Content="⚙  OPEN LOOP"
                                             Width="170" Height="36"
@@ -104,7 +109,26 @@
                                                TextWrapping="Wrap" Width="160"
                                                VerticalAlignment="Center"/>
 								</StackPanel>
-								<!-- PID error display (only meaningful in closed loop) -->
+
+								<!-- Status display for closed loop -->
+								<Grid ColumnDefinitions="*,*">
+									<StackPanel Grid.Column="0" HorizontalAlignment="Center">
+										<TextBlock Text="Status" FontSize="10"
+                                                   Foreground="#888" HorizontalAlignment="Center"/>
+										<TextBlock x:Name="TxtLoopStatus" Text="—"
+                                                   FontSize="12" Foreground="#FFAA33"
+                                                   HorizontalAlignment="Center"/>
+									</StackPanel>
+									<StackPanel Grid.Column="1" HorizontalAlignment="Center">
+										<TextBlock Text="Tolerance" FontSize="10"
+                                                   Foreground="#888" HorizontalAlignment="Center"/>
+										<TextBlock x:Name="TxtTolerance" Text="±0.3°"
+                                                   FontSize="12" Foreground="#888"
+                                                   HorizontalAlignment="Center"/>
+									</StackPanel>
+								</Grid>
+
+								<!-- Error display -->
 								<Grid ColumnDefinitions="*,*,*">
 									<StackPanel Grid.Column="0" HorizontalAlignment="Center">
 										<TextBlock Text="Err Roll" FontSize="10"
@@ -164,11 +188,11 @@
 					</StackPanel>
 				</Border>
 
-				<!-- Rotation — open-loop label changes to "Setpoint" in closed loop -->
+				<!-- Rotation Target -->
 				<Border Classes="section">
 					<StackPanel>
 						<TextBlock x:Name="HeaderRotation" Classes="sectionHeader"
-                                   Text="Rotation (Deg)  —  Open Loop"/>
+                                   Text="Target Rotation (Deg)"/>
 						<Border Classes="sectionBody">
 							<StackPanel>
 								<Grid Margin="0,2" ColumnDefinitions="70,*,50">
@@ -191,102 +215,10 @@
 									<Button Content="Set" Grid.Column="2" Click="BtnSetRot_Click" Tag="Z" Padding="4,2"/>
 								</Grid>
 								<Slider x:Name="SldRotZ" Minimum="-12" Maximum="12" ValueChanged="Slider_ValueChanged"/>
-							</StackPanel>
-						</Border>
-					</StackPanel>
-				</Border>
 
-				<!-- ═══ PID TUNING PANEL ═════════════════════════════════ -->
-				<Border Classes="section" BorderBrush="#224488" x:Name="PanelPID">
-					<StackPanel>
-						<TextBlock Classes="sectionHeader" Text="PID Tuning  (Closed Loop)"/>
-						<Border Classes="sectionBody">
-							<StackPanel>
-
-								<!-- Roll PID -->
-								<TextBlock Text="── Roll ──" Foreground="#5599FF"
-                                           FontWeight="Bold" Margin="0,0,0,4"/>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kp" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKpRoll" Grid.Column="1"
-                                            Minimum="0" Maximum="5" Value="1.2"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKpRoll" Text="1.20"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Ki" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKiRoll" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.05"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKiRoll" Text="0.05"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kd" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKdRoll" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.08"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKdRoll" Text="0.08"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-
-								<!-- Pitch PID -->
-								<TextBlock Text="── Pitch ──" Foreground="#55FF99"
-                                           FontWeight="Bold" Margin="0,8,0,4"/>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kp" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKpPitch" Grid.Column="1"
-                                            Minimum="0" Maximum="5" Value="1.2"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKpPitch" Text="1.20"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Ki" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKiPitch" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.05"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKiPitch" Text="0.05"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kd" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKdPitch" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.08"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKdPitch" Text="0.08"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-
-								<!-- Yaw PID -->
-								<TextBlock Text="── Yaw ──" Foreground="#FFAA33"
-                                           FontWeight="Bold" Margin="0,8,0,4"/>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kp" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKpYaw" Grid.Column="1"
-                                            Minimum="0" Maximum="5" Value="0.8"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKpYaw" Text="0.80"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Ki" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKiYaw" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.02"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKiYaw" Text="0.02"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-								<Grid ColumnDefinitions="30,*,40" Margin="0,2">
-									<TextBlock Text="Kd" Grid.Column="0" Foreground="#AAAAAA"/>
-									<Slider x:Name="SldKdYaw" Grid.Column="1"
-                                            Minimum="0" Maximum="1" Value="0.05"
-                                            ValueChanged="PidSlider_ValueChanged"/>
-									<TextBlock x:Name="TxtKdYaw" Text="0.05"
-                                               Grid.Column="2" Foreground="#CCCCCC" FontSize="11"/>
-								</Grid>
-
+								<TextBlock x:Name="TxtTargetStatus" Text=""
+                                           FontSize="11" Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
 							</StackPanel>
 						</Border>
 					</StackPanel>
@@ -296,9 +228,9 @@
 				<Border Classes="section" BorderBrush="#2244AA">
 					<StackPanel>
 						<TextBlock Classes="sectionHeader"
-                                   Text="Real-time Sensor Feedback (MPU6050)"/>
+                                   Text="Real-time Sensor Feedback — Roll / Pitch / Yaw"/>
 						<Border Classes="sectionBody">
-							<Grid ColumnDefinitions="*,*,*,*">
+							<Grid ColumnDefinitions="*,*,*">
 								<StackPanel Grid.Column="0" HorizontalAlignment="Center">
 									<TextBlock Text="Roll" FontWeight="Bold" HorizontalAlignment="Center"/>
 									<TextBlock x:Name="TxtSensorRoll" Text="0.0°"
@@ -315,12 +247,6 @@
 									<TextBlock Text="Yaw" FontWeight="Bold" HorizontalAlignment="Center"/>
 									<TextBlock x:Name="TxtSensorYaw" Text="0.0°"
                                                FontSize="16" Foreground="#5599FF"
-                                               HorizontalAlignment="Center"/>
-								</StackPanel>
-								<StackPanel Grid.Column="3" HorizontalAlignment="Center">
-									<TextBlock Text="Temp" FontWeight="Bold" HorizontalAlignment="Center"/>
-									<TextBlock x:Name="TxtSensorTemp" Text="0.0°C"
-                                               FontSize="16" Foreground="#FF6655"
                                                HorizontalAlignment="Center"/>
 								</StackPanel>
 							</Grid>
